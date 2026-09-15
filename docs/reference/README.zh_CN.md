@@ -44,6 +44,13 @@
 
 - [离线宝可梦图鉴](sunny0826/offline-pokedex/README.zh_CN.md) — 把全部 1025 只宝可梦与精灵、叫声内嵌固件的全离线图鉴。
 
+### muma2023
+
+**经验条目：**
+
+- [按键事件模型与输入翻译层](muma2023/button-event-model-and-input-translation.zh_CN.md) — 三个硬件按键背后 press/click/long 的时序，为什么「按下即响应」与「区分短按/长按」在同一按键上互斥，以及化解它的无依赖翻译层。
+- [按玩家真实输入粒度验证可玩性](muma2023/playability-validation-at-player-granularity.zh_CN.md) — 为什么细粒度求解器会把不可玩的布局报成可解、默认瞄准线断言，以及用玩家可选档位度量时机窗口。
+
 ## 新增经验条目
 
 一次发布可沉淀**一条或多条**可复用经验，每条作为独立条目新增，以发布版本（tag 或 commit）作为上下文。遵守仓库语言规则：默认 `.md` 路径用英文、配套 `.zh_CN.md` 用简体中文，并在同一次变更中对齐。

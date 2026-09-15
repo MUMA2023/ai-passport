@@ -51,6 +51,13 @@ The engineering rules themselves live under
 
 - [Offline Pokédex](sunny0826/offline-pokedex/README.md) — a fully offline Pokédex that embeds all 1,025 Pokémon, their sprites, and cries in the firmware.
 
+### muma2023
+
+**Experience entries:**
+
+- [Button Event Model and Input Translation](muma2023/button-event-model-and-input-translation.md) — the press/click/long timing behind the three hardware keys, why immediacy and short-vs-long discrimination are mutually exclusive on one key, and the dependency-free translation layer that resolves it.
+- [Validate Playability at the Player's Input Granularity](muma2023/playability-validation-at-player-granularity.md) — why a fine-grained solver reports unplayable layouts as solvable, the default-aim-line assertion, and measuring timing windows in player-selectable notches.
+
 ## Adding an experience entry
 
 Each release may produce **one or more** reusable, post-release learnings; each is

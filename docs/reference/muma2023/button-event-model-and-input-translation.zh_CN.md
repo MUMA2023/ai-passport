@@ -1,0 +1,63 @@
+<p align="right">
+  <strong>简体中文</strong> · <a href="button-event-model-and-input-translation.md">English</a>
+</p>
+
+# 按键事件模型与输入翻译层
+
+在 `feature-mini-golf-game` 分支上做**迷你高尔夫**玩法时沉淀（基线 `a5c30d3`）。这些经验适用于任何直接读取三个硬件按键、而不是只依赖菜单「点击式导航」的 AI Passport 应用。
+
+## 一次物理按压会送出最多两个事件，而且时机不同
+
+`components/bsp/src/bsp_button.c` 为每个按键注册了四个回调：`BUTTON_PRESS_DOWN`、`BUTTON_SINGLE_CLICK`、`BUTTON_DOUBLE_CLICK`、`BUTTON_LONG_PRESS_START`，分别转发为 `BSP_BTN_PRESS`、`BSP_BTN_CLICK`、`BSP_BTN_DOUBLE`、`BSP_BTN_LONG`。它们不是同时到达的，也不是互斥的：
+
+- `PRESS` 在按键按下的瞬间触发。
+- `CLICK` 在抬起时触发，前提是这次按压足够短。
+- `LONG` 在长按阈值到达时触发，而这是在**抬起之前**。
+
+因此一次长按会产生 `PRESS` 再产生 `LONG`；一次短按会产生 `PRESS` 再产生 `CLICK`。同时响应 `PRESS` 和后续事件，就会让一次按压被算两次。由此得出一条值得明说的结论：对同一个按键而言，**「按下即响应」与「区分短按/长按」是互斥的**。等你确认这是长按时，你早已对那次按下做了提交。
+
+迷你高尔夫把三种形态全踩了一遍：
+
+- **长按瞄准键转了 36°，而不是 32°。** `PRESS` 先走了 4° 微调，`LONG` 又走了 32° 粗调，合计 4 + 32。修复：`LONG` 只补差额 `GOLF_AIM_COARSE_DEG - GOLF_AIM_STEP_DEG` = 28°，让一次长按正好等于一个粗调步长。
+- **长按确定键在返回菜单前先闪了一格力度。** 摆动条单程 600ms，上果岭的窗口只有几十毫秒宽，所以击球必须发生在 `PRESS` 上——等 `CLICK` 会让这个时机玩法没法玩。但 `PRESS` 先于 `LONG_PRESS_START` 到达，于是「离开页面」的手势被短暂读成了一次击球。
+- **尾巴上的 `CLICK` 把球推进了下一洞。** 击球之后抬起仍会发出 `SINGLE_CLICK`，页面把它读成了「球已进洞，显示下一洞」。
+
+## 把翻译规则写成一层纯逻辑
+
+修复方式不是打三个局部补丁，而是把所有按键规则抽到 `main/golf_input.{h,c}`——不依赖 ESP-IDF、不依赖 LVGL，只有整数状态——这样主机测试可以直接驱动事件序列并对模型状态断言。规则只声明一次：
+
+| 按键 | 事件 | 动作 |
+| --- | --- | --- |
+| 上 / 下 | `PRESS` | 旋转 `±GOLF_AIM_STEP_DEG`（4°） |
+| 上 / 下 | `LONG` | 旋转 `±(GOLF_AIM_COARSE_DEG - GOLF_AIM_STEP_DEG)`（±28°） |
+| 确定 | 力度阶段的 `PRESS` | 击球 |
+| 确定 | 其余阶段的 `CLICK` | 执行该阶段动作，但丢弃尾巴点击 |
+
+两个机制让它成立。`accept_once()` 把 `PRESS` 与紧随的 `CLICK` 收敛成一次动作：`PRESS` 被记账并执行，落在已记录 `PRESS` 之后 `GOLF_PRESS_CLICK_WINDOW_MS`（400ms）窗口内的 `CLICK` 被丢弃。`click_is_trailing()` 为「用 `CLICK` 触发」的阶段回答同一个问题，让击球后的抬起无法推进洞数。两者都刻意保守：没有前置 `PRESS` 的 `CLICK` 仍然有效，所以万一某个组件版本只上报点击，应用会退化成「可用」而不是变成死页面。
+
+## 逐键记账是必须的，忘了测试会抓住你
+
+状态就是两个按键索引的小数组：`press_seen[]` 与 `last_press_ms[]`。每一个响应 `PRESS` 的分支都必须同时写这两项，包括那些看起来并不需要它们的分支。
+
+抽出这层之后几分钟，测试就抓到了这个遗漏。`handle_aim_key()` 的 `PRESS` 分支旋转了瞄准角，却没记 `press_seen`，于是抬起时到达的 `CLICK` 落进了「没见过 `PRESS`，那这一定是只报点击的组件」兜底分支，又走了一格。`test_short_press_steps_once` 第一次运行就失败。如果没有这层可主机测试的代码，它会以「瞄准偶尔会跳两格」的偶发报告形式流出。
+
+## 确定键长按被框架占用
+
+`main/main.c` 全局拦截 `BSP_BTN_OK` + `BSP_BTN_LONG`，用于离开 demo 返回菜单；demo 页面根本看不到这个事件。不要为确定键长按设计页面内含义。迷你高尔夫改为在力度阶段用「上键长按」表示放弃本杆——那个手势本来就空着。
+
+## 对下一个应用的推广
+
+- `PRESS` 总是先到；`CLICK` 或 `LONG` 中恰好有一个随后到达。没有显式的去重规则时，绝不要同时响应 `PRESS` 及其后继事件。
+- 逐个按键、逐个阶段决定你要的是即时性还是可区分性。同一个按键上两者不可兼得。
+- 为每个按键保留「已见过按下」的标志位，并在每一个 `PRESS` 分支里写它，哪怕那个分支看起来很自洽。
+- 假定状态变更式按压之后抬起可能发出游离的 `CLICK`，用时间窗口过滤它，而不是指望它不来。
+- 确定键长按已被框架占用。据此安排其余手势，并想清楚一个按键在不同阶段承担两种职责时会怎样。
+- 把整套翻译放进一个无依赖模块并配主机测试。这里的 bug 都是时序 bug，而时序 bug 只在测试里排查才便宜。
+
+## 相关文档
+
+- `components/bsp/src/bsp_button.c` —— 注册的四个回调及其事件映射。
+- `main/golf_input.h`、`main/golf_input.c` —— 翻译层及其规则注释块。
+- `main/demo_golf.c` —— 把 `bsp_btn_t` / `bsp_btn_ev_t` 映射到模型按键词汇的薄适配层 `map_key()`。
+- `tests/test_golf_input.c` —— 九组事件序列测试，含单步与尾巴点击回归。
+- `main/main.c` —— 确定键长按的全局拦截。
