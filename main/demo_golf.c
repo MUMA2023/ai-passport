@@ -5,7 +5,8 @@
 //   力度阶段   力度条自动来回摆动;确定 短按 = 按当前力度击球;上 = 退回瞄准
 //   进洞之后   确定 短按 = 下一洞 / 结算
 //
-// 长按确定返回菜单由 main.c 统一拦截,所以本页不使用"按住蓄力"这类操作。
+// 长按确定在本固件里没有含义(没有可返回的菜单),所以本页不使用"按住蓄力"
+// 这类操作;取消本杆放在力度阶段的长按上键。
 //
 // 按键事件的一个硬约束:BUTTON_PRESS_DOWN 在按下瞬间就上报,而
 // BUTTON_LONG_PRESS_START 要等长按阈值之后才上报。所以"按下即响应"与
@@ -17,10 +18,12 @@
 
 #include "bsp_audio.h"
 #include "bsp_battery.h"
+#include "bsp_display.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
+#include "golf_idle.h"
 #include "golf_input.h"
 #include "golf_model.h"
 #include "lvgl.h"
@@ -33,6 +36,11 @@
 #define GOLF_BALL_MARGIN (GOLF_BALL_RADIUS + 2)
 // 连续撞墙时最多每 140ms 出一声,避免音效刷屏。
 #define GOLF_BOUNCE_SOUND_GUARD_MS 140
+
+// 背光档位:正常亮度,以及闲置调暗后的亮度。调暗而不是关掉,这样一眼还能看出
+// 屏幕在显示什么,不会让人误以为设备死机了。
+#define GOLF_BACKLIGHT_FULL 100
+#define GOLF_BACKLIGHT_DIM 8
 
 // 画布几何:必须与 ui_pixel 面板内沿对齐。
 #define COURSE_X 8
@@ -113,6 +121,7 @@ LV_DRAW_BUF_DEFINE_STATIC(golf_buf, GOLF_WORLD_W, GOLF_WORLD_H, LV_COLOR_FORMAT_
 
 static golf_model_t s_model;
 static golf_key_state_t s_keys;
+static golf_idle_state_t s_idle;
 static lv_obj_t *s_scr;
 static lv_obj_t *s_canvas;
 static lv_obj_t *s_hud_label;
@@ -408,6 +417,14 @@ static void timer_cb(lv_timer_t *timer) {
 
     golf_key_msg_t input;
     while (s_input_queue && xQueueReceive(s_input_queue, &input, 0) == pdTRUE) {
+        // 任何按键事件都算"有人在场",包括玩法本身不响应的那种(比如双击)。
+        // 把屏幕从调暗状态唤醒的那一次按压只负责唤醒,不再转给玩法 ——
+        // 否则在力度阶段"按一下让屏幕亮起来"会直接把球打出去。
+        if (golf_idle_note_activity(&s_idle, now_ms())) {
+            bsp_display_backlight(GOLF_BACKLIGHT_FULL);
+            ESP_LOGI(TAG, "idle: backlight restored to %d%%", GOLF_BACKLIGHT_FULL);
+            continue;
+        }
         handle_key(input.btn, input.ev);
     }
 
@@ -416,6 +433,12 @@ static void timer_cb(lv_timer_t *timer) {
 
     paint_dynamic();
     refresh_live();
+
+    // 长时间没人操作就把背光压低。恢复由上面那次按键负责,这里只管调暗。
+    if (golf_idle_tick(&s_idle, now_ms())) {
+        bsp_display_backlight(GOLF_BACKLIGHT_DIM);
+        ESP_LOGI(TAG, "idle: backlight dimmed to %d%%", GOLF_BACKLIGHT_DIM);
+    }
 }
 
 static lv_obj_t *label_create(lv_obj_t *parent, const lv_font_t *font,
@@ -450,6 +473,8 @@ void demo_golf_enter(void) {
     }
     s_dirty.valid = false;
     s_last_bounce_sound_ms = 0;
+    golf_idle_init(&s_idle, now_ms());
+    bsp_display_backlight(GOLF_BACKLIGHT_FULL);
 
     if (rtttl_player_start() != ESP_OK) {
         ESP_LOGW(TAG, "sound effects unavailable");
@@ -493,6 +518,8 @@ void demo_golf_enter(void) {
 }
 
 void demo_golf_exit(void) {
+    // 离场时把背光还原:否则如果正好在调暗状态下退出,下个页面会跟着变暗。
+    bsp_display_backlight(GOLF_BACKLIGHT_FULL);
     if (s_timer) {
         lv_timer_delete(s_timer);
         s_timer = NULL;

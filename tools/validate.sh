@@ -36,6 +36,10 @@ run_static_checks() {
         tests/test_golf_input.c main/golf_model.c main/golf_input.c \
         -o "${test_dir}/test_golf_input"
     "${test_dir}/test_golf_input"
+    "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
+        tests/test_golf_idle.c main/golf_idle.c \
+        -o "${test_dir}/test_golf_idle"
+    "${test_dir}/test_golf_idle"
     python3 tests/test_verify_firmware.py
     rm -rf "${test_dir}"
     echo "Host tests: PASS"

@@ -4,7 +4,7 @@
 
 # Button Event Model and Input Translation
 
-Captured while building the **Mini Golf** play on the `feature-mini-golf-game`
+Captured while building the **Mini Golf** play on the `feature/mini-golf`
 branch (baseline `a5c30d3`). These lessons apply to any AI Passport app that
 reads the three hardware keys directly instead of leaning on the menu's
 click-only navigation.
@@ -35,12 +35,12 @@ Mini Golf hit all three shapes of this trap:
   and `LONG` applied the 32° coarse step, so the total was 4 + 32. Fix: `LONG`
   only tops up the difference, `GOLF_AIM_COARSE_DEG - GOLF_AIM_STEP_DEG` = 28°,
   making one long press exactly one coarse step.
-- **A long OK press flashed a power step before returning to the menu.** The
-  swing meter sweeps a 600 ms round trip and the on-green window is only tens of
-  milliseconds wide, so striking must happen on `PRESS` — waiting for `CLICK`
-  makes the timing game unplayable. But `PRESS` arrives before
-  `LONG_PRESS_START`, so the "leave the page" gesture was briefly read as a
-  strike.
+- **A long OK press flashed a power step before the framework's "leave the
+  page" gesture fired.** The swing meter sweeps a 600 ms round trip and the
+  on-green window is only tens of milliseconds wide, so striking must happen on
+  `PRESS` — waiting for `CLICK` makes the timing game unplayable. But `PRESS`
+  arrives before `LONG_PRESS_START`, so the OK long-press that the menu-era
+  `main.c` consumed was briefly read as a strike.
 - **The trailing `CLICK` advanced the hole.** After a strike, the release still
   emitted `SINGLE_CLICK`, which the page read as "the ball is sunk, show the next
   hole".
@@ -82,13 +82,21 @@ stepped a second notch. `test_short_press_steps_once` failed on the first run.
 Without the host-testable layer this would have shipped as an intermittent
 "sometimes the aim jumps two steps" report.
 
-## OK long-press is reserved by the framework
+## OK long-press: claimed by the menu, then dropped along with it
 
-`main/main.c` intercepts `BSP_BTN_OK` + `BSP_BTN_LONG` globally to leave a demo
-and return to the menu; a demo page never sees that event. Do not design an
-in-page meaning for OK long-press. Mini Golf puts "cancel this shot" on
-UP long-press in the power phase instead, which is also the gesture that is
-naturally free there.
+In a menu-based firmware `main/main.c` intercepts `BSP_BTN_OK` + `BSP_BTN_LONG`
+globally to leave a page and return to the menu, so a page never sees that
+event. That was the case while Mini Golf was a menu entry, and it is why the
+play never claimed OK long-press.
+
+The play later shipped as a single-play firmware with no menu at all, so
+`main.c` no longer intercepts anything and OK long-press is simply unclaimed.
+The play still does not use it: the gesture has to behave the same whether or
+not a menu exists, and "cancel this shot" already sits on UP long-press in the
+power phase, which is the gesture that is naturally free there. Treat a
+framework-level gesture as unavailable even after the framework stops claiming
+it — otherwise the page's behavior silently depends on which entry point it was
+built with.
 
 ## Generalization for the next app
 
@@ -100,9 +108,9 @@ naturally free there.
   even the ones that look self-contained.
 - Assume the release may emit a stray `CLICK` after a state-changing press, and
   filter it by a time window rather than by hoping it does not come.
-- `OK` long-press is claimed by the framework. Budget the other gestures
-  accordingly, and consider what happens when a key must do two jobs in
-  different phases.
+- Treat `OK` long-press as unavailable: a menu-based entry point claims it, a
+  single-play entry point does not. Budget the other gestures accordingly, and
+  consider what happens when a key must do two jobs in different phases.
 - Put the whole translation in a dependency-free module with host tests. The
   bugs here are timing bugs, and timing bugs are only cheap to find in tests.
 
@@ -116,4 +124,5 @@ naturally free there.
   `bsp_btn_ev_t` to the model's key vocabulary.
 - `tests/test_golf_input.c` — nine event-sequence tests, including the
   single-step and trailing-click regressions.
-- `main/main.c` — the global OK long-press interceptor.
+- `main/main.c` — the entry point: it intercepts OK long-press while a menu
+  exists, and enters the play directly once the menu is dropped.

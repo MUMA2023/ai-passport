@@ -58,7 +58,8 @@ golf_event_t golf_input_key(golf_model_t *model, golf_key_state_t *state,
     }
 
     // 力度阶段必须按下即击球:摆动条单程 600ms,上果岭的窗口只有几十毫秒。
-    // 其余阶段等 CLICK,这样"长按确定返回菜单"不会先闪出一格力度。
+    // 其余阶段等 CLICK,这样一次长按不会先闪出一个动作,抬起时也不会
+    // 和随后的 CLICK 各算一次。
     if (model->phase == GOLF_PHASE_POWER) {
         if (!accept_once(state, key, ev, now_ms)) return GOLF_EVENT_NONE;
     } else if (ev == GOLF_KEY_EV_CLICK) {

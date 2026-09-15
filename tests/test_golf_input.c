@@ -19,7 +19,7 @@ static void tick_until_settled(golf_model_t *model) {
 }
 
 // 瞄准阶段确定键要等 CLICK:PRESS 只是按下瞬间的噪声,不能先把力度条点亮,
-// 否则"长按确定返回菜单"会先闪出一格力度。
+// 否则一次长按会先闪出一格力度,抬起时还会和随后的 CLICK 各算一次。
 static void test_ok_press_in_aim_does_not_start_swing(void) {
     golf_model_t model;
     golf_key_state_t keys = {0};
