@@ -1,5 +1,15 @@
 idf_component_register(
     SRCS "main.c"
+         # --- 「家机桌宠」应用本体 ---
+         "pet_app.c"
+         "pet_model.c"
+         "pet_store.c"
+         "pet_audio.c"
+         "pet_view.c"
+         "lv_font_pet_16.c"
+         # --- BSP 参考演示 ---
+         # 开机不再进入演示菜单（见 main.c），但这些文件仍参与编译：
+         # 这样它们不会在无人察觉的情况下被改坏，链接时未被引用的目标文件也不会进固件。
          "demo_navigation.c"
          "ui_pixel.c"
          "ui_pixel_math.c"

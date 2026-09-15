@@ -14,6 +14,10 @@ run_static_checks() {
 
     python3 tools/check_repo.py
 
+    # The Chinese subset font is generated from the sources; stale output renders
+    # as blank characters on the device without failing any other check.
+    PYTHONDONTWRITEBYTECODE=1 python3 tools/check_font_coverage.py
+
     actionlint_bin="${ACTIONLINT_BIN:-}"
     if [[ -z "${actionlint_bin}" ]]; then
         actionlint_bin="$(command -v actionlint || true)"
@@ -32,6 +36,10 @@ run_static_checks() {
         tests/test_demo_navigation.c main/demo_navigation.c \
         -o "${test_dir}/test_demo_navigation"
     "${test_dir}/test_demo_navigation"
+    "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
+        tests/test_pet_model.c main/pet_model.c \
+        -o "${test_dir}/test_pet_model"
+    "${test_dir}/test_pet_model"
     "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Icomponents/bsp/src \
         tests/test_bsp_display_rounding.c components/bsp/src/bsp_display_rounding.c \
         -o "${test_dir}/test_bsp_display_rounding"
